@@ -1,39 +1,16 @@
-# ПЕРЕИМЕНОВАТЬ В .env
+# ПЕРЕИМЕНОВАТЬ В .env !!!
 
 # Bot Configuration
-TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN
-
-# Бота нужно добавить в канал и сделать его администратором.
-# чтобы узнать ID канала, нужно переслать любое сообщение из канала в @LeadConverterToolkitBot
-# ВАЖНО: ID канала должен быть отрицательным, например -1002328687465
+TELEGRAM_BOT_TOKEN=YOUR_TELEGRAM_BOT_TOKEN
 LOGS_CHANNEL_ID=YOUR_CHANNEL_ID
 
 # Google Calendar IDs
-# ID календаря можно узнать в настройках календаря в гугл календаре
-BADMINTON_CALENDAR_ID=YOUR_BADMINTON_CALENDAR_ID
-SQUASH_CALENDAR_ID=YOUR_SQUASH_CALENDAR_ID
+FIRST_CALENDAR_ID=YOUR_FIRST_CALENDAR_ID
+SECOND_CALENDAR_ID=YOUR_SECOND_CALENDAR_ID
 
 # Sticker IDs
-# ID стикера, которые будет отправлять бот во время бронирования
-# ID стикера можно узнать в настройках стикера в телеграм
-# или отправив его в @LeadConverterToolkitBot
-BOOKING_STICKER_ID=YOUR_BOOKING_STICKER_ID
+# LOADING_STICKER_ID=CAACAgEAAxkBAAEL52Znk8JEnSbYSkFiyyhvFgmSoeNkgAACAwoAAr-MkASRpEeCToKpcTYE
+LOADING_STICKER_ID=YOUR_LOADING_STICKER_ID
 
-# Вот пошаговая инструкция для получения `credentials.json`:
-# https://developers.google.com/calendar/api/guides/concepts/auth
-# 1. Перейдите в Google Cloud Console
-# 2. Создайте новый проект или выберите существующий
-# 3. В боковом меню найдите "APIs & Services" → "Enabled APIs & services"
-# 4. Нажмите "+ ENABLE APIS AND SERVICES"
-# 5. Найдите "Google Calendar API" и включите его
-# 6. Перейдите в "Credentials" (в боковом меню)
-# 7. Нажмите "CREATE CREDENTIALS" → "OAuth client ID"
-# 8. Выберите "Desktop app"
-# 9. Нажмите "CREATE"
-# 10. Скопируйте "Client ID" и "Client secret"
-# 11. Вставьте их в .env файл
-# 12. Скопируйте credentials.json в корень проекта
-# 13. Запустите бота
-
-# pip install -r requirements.txt
-# python my_telebot.py
+# Environment ("local" or "server")
+ENVIRONMENT=YOUR_ENVIRONMENT
