@@ -88,3 +88,50 @@ python my_telebot.py &
 ```bash
 screen -dmS booking_telebot python my_telebot.py
 ```
+
+#### запуск ботак как сервис:
+1. создадим файл `booking_telebot.service`
+важно, файл должен находиться в директории `/etc/systemd/system/`
+
+2. добавим в него следующий текст:
+```bash
+[Unit]
+Description=Booking Telegram Bot
+After=multi-user.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/path/to/your/project
+ExecStart=/usr/bin/python3 /path/to/your/project/my_telebot.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+3. перезапустим сервис
+```bash
+sudo systemctl daemon-reload && sudo systemctl enable booking_telebot.service && sudo systemctl start booking_telebot.service
+```
+
+4. проверим статус сервиса
+```bash
+sudo systemctl status booking_telebot.service
+```
+
+5. проверим логи сервиса
+```bash
+sudo journalctl -u booking_telebot.service -f
+```
+---
+также можно остановить сервис
+```bash
+sudo systemctl stop booking_telebot.service
+```
+
+и удалить сервис
+```bash
+sudo systemctl disable booking_telebot.service && sudo systemctl remove booking_telebot.service
+```
