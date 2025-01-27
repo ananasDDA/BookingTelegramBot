@@ -125,9 +125,8 @@ class GoogleCalendarHelper:
                 start_time_str = start_time.isoformat() + 'Z'
                 end_time_str = end_time.isoformat() + 'Z'
 
-                # Get busy slots from specified calendar
                 events_result = self.service.events().list(
-                    calendarId=calendar_id,  # Use sport-specific calendar
+                    calendarId=calendar_id,
                     timeMin=start_time_str,
                     timeMax=end_time_str,
                     singleEvents=True,
@@ -140,13 +139,15 @@ class GoogleCalendarHelper:
                 for event in events:
                     start = event['start'].get('dateTime')
                     end = event['end'].get('dateTime')
-                    if start and end:  # Only include events with specific times
+                    if start and end:
                         start_dt = datetime.fromisoformat(start.replace('Z', '+00:00'))
                         end_dt = datetime.fromisoformat(end.replace('Z', '+00:00'))
+                        user_id = event.get('extendedProperties', {}).get('private', {}).get('userId')
                         busy_slots.append({
                             'start': start_dt,
                             'end': end_dt,
-                            'hour': start_dt.hour
+                            'hour': start_dt.hour,
+                            'user_id': user_id
                         })
 
                 return busy_slots
@@ -154,12 +155,12 @@ class GoogleCalendarHelper:
             except (socket.error, ssl.SSLError) as e:
                 retry_count += 1
                 if retry_count == max_retries:
-                    print(f"Failed after {max_retries} retries: {e}")
+                    logger.error(f"Failed after {max_retries} retries: {e}")
                     return []
                 sleep(1)
 
             except Exception as e:
-                print(f"Unexpected error: {e}")
+                logger.error(f"Unexpected error: {e}")
                 return []
 
     def create_event(self, event_data, option):
@@ -181,3 +182,46 @@ class GoogleCalendarHelper:
         except Exception as e:
             logger.error(f"Error creating event in {option} calendar: {str(e)}")
             raise
+
+    def get_month_bookings(self, start_date, end_date, option):
+        """Get all bookings for a specific month"""
+        calendar_id = self.get_calendar_id(option)
+        if not calendar_id:
+            return []
+
+        try:
+            events_result = self.service.events().list(
+                calendarId=calendar_id,
+                timeMin=start_date.isoformat() + 'T00:00:00Z',
+                timeMax=end_date.isoformat() + 'T00:00:00Z',
+                singleEvents=True,
+                orderBy='startTime'
+            ).execute()
+
+            bookings = []
+            for event in events_result.get('items', []):
+                start = event['start'].get('dateTime')
+                if start:
+                    event_date = datetime.fromisoformat(start.replace('Z', '+00:00')).date()
+                    user_id = event.get('extendedProperties', {}).get('private', {}).get('userId')
+                    bookings.append({
+                        'date': event_date,
+                        'user_id': user_id
+                    })
+            return bookings
+
+        except Exception as e:
+            logger.error(f"Error getting month bookings: {str(e)}")
+            return []
+
+    def get_user_bookings(self, start_date, end_date, option):
+        """Get user's bookings for a specific month"""
+        all_bookings = self.get_month_bookings(start_date, end_date, option)
+        return [booking for booking in all_bookings if booking.get('user_id')]
+
+    def get_user_bookings_for_date(self, date, option, user_id):
+        """Get user's bookings for a specific date"""
+        start_date = datetime.strptime(date, '%Y-%m-%d').date()
+        end_date = start_date + timedelta(days=1)
+        bookings = self.get_month_bookings(start_date, end_date, option)
+        return [booking for booking in bookings if booking.get('user_id') == str(user_id)]

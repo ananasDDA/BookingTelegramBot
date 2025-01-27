@@ -1,11 +1,14 @@
 import telebot
 from telebot import types
-from datetime import datetime
+from datetime import datetime, date
 import calendar
 from calendar_helper import GoogleCalendarHelper
 import logging
 import os
 from dotenv import load_dotenv
+import locale
+import requests
+import time
 
 # Load environment variables
 load_dotenv()
@@ -13,6 +16,9 @@ load_dotenv()
 # Remove the hardcoded values and use environment variables
 LOGS_CHANNEL_ID = os.getenv('LOGS_CHANNEL_ID')
 bot = telebot.TeleBot(os.getenv('TELEGRAM_BOT_TOKEN'))
+
+# Set Russian locale for month names
+locale.setlocale(locale.LC_ALL, 'ru_RU.UTF-8')
 
 # Define TelegramLogHandler
 class TelegramLogHandler(logging.Handler):
@@ -51,12 +57,12 @@ calendar_helper = GoogleCalendarHelper()
 # Add after other configurations
 LOGS_CHANNEL_ID = "YOUR_CHANNEL_ID"  # Replace with your channel ID
 
-def generate_calendar(year, month, option):
-    # Создание inline-календаря на указанный месяц и год
+def generate_calendar(year, month, option, user_id):
     markup = types.InlineKeyboardMarkup()
+    today = date.today()
 
-    # Название месяца и кнопки для навигации
-    month_name = calendar.month_name[month]
+    # Russian month name
+    month_name = calendar.month_name[month].capitalize()
     header = [
         types.InlineKeyboardButton("<<", callback_data=f"prev_month:{option}:{year}-{month}"),
         types.InlineKeyboardButton(month_name, callback_data="ignore"),
@@ -64,62 +70,85 @@ def generate_calendar(year, month, option):
     ]
     markup.row(*header)
 
-    # Add weekday headers
-    week_days = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
+    # Russian weekday names
+    week_days = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
     markup.row(*[types.InlineKeyboardButton(day, callback_data="ignore") for day in week_days])
 
-    # Get calendar dates
-    cal = calendar.monthcalendar(year, month)
+    # Get all bookings for this month
+    start_date = date(year, month, 1)
+    end_date = date(year, month + 1, 1) if month < 12 else date(year + 1, 1, 1)
+    bookings = calendar_helper.get_month_bookings(start_date, end_date, option)
+    user_bookings = calendar_helper.get_user_bookings(start_date, end_date, option)
 
+    cal = calendar.monthcalendar(year, month)
     for week in cal:
         row = []
         for day in week:
             if day == 0:
                 btn = types.InlineKeyboardButton(" ", callback_data="ignore")
             else:
-                # Simply show the day number without any markers
+                current_date = date(year, month, day)
+                display_text = str(day)
+
+                # Past dates
+                if current_date < today:
+                    if any(booking['date'] == current_date for booking in bookings):
+                        display_text = f"{day}{os.getenv('PAST_BOOKING_ICON')}"
+                    else:
+                        display_text = f"{day}{os.getenv('PAST_DATE_ICON')}"
+                # Today
+                elif current_date == today:
+                    display_text = f"{day}{os.getenv('TODAY_ICON')}"
+                # Future dates
+                else:
+                    if any(booking['date'] == current_date and booking['user_id'] == str(user_id) for booking in user_bookings):
+                        display_text = f"{day}{os.getenv('USER_BOOKING_ICON')}"
+
                 btn = types.InlineKeyboardButton(
-                    str(day),
+                    display_text,
                     callback_data=f"select_date:{option}:{year}-{month}-{day}"
                 )
             row.append(btn)
         markup.row(*row)
 
-    # Add back button
     back_button = types.InlineKeyboardButton("« Назад", callback_data="back_to_options")
     markup.row(back_button)
-
     return markup
 
-def generate_time_slots(option, date):
+def generate_time_slots(option, date, user_id):
     markup = types.InlineKeyboardMarkup()
     busy_slots = calendar_helper.get_busy_slots(
         datetime.strptime(date, '%Y-%m-%d').date(),
         option
     )
 
-    busy_hours = set()
+    # Create a dictionary of hour -> (is_busy, user_id)
+    slot_info = {}
     for slot in busy_slots:
-        busy_hours.add(slot['hour'])
+        hour = slot['hour']
+        event_user_id = slot.get('user_id')
+        slot_info[hour] = event_user_id
 
     for hour in range(10, 20):
-        if hour in busy_hours:
-            time_text = f"🔴 {hour}:00"
+        if hour in slot_info:
+            event_user_id = slot_info[hour]
+            if event_user_id == str(user_id):
+                # User's own booking
+                time_text = f"{hour}:00 {os.getenv('USER_BOOKING_ICON')}"
+            else:
+                # Someone else's booking
+                time_text = f"{hour}:00 {os.getenv('OCCUPIED_TIME_ICON')}"
             callback_data = f"busy:{hour}:00"
         else:
-            time_text = f"{hour}:00"  # Removed green marker
+            # Free time slot
+            time_text = f"{hour}:00"
             callback_data = f"time:{option}:{date}:{hour}:00"
 
-        time_button = types.InlineKeyboardButton(
-            time_text,
-            callback_data=callback_data
-        )
+        time_button = types.InlineKeyboardButton(time_text, callback_data=callback_data)
         markup.add(time_button)
 
-    # Add back button
     back_button = types.InlineKeyboardButton("« Назад", callback_data=f"back_to_calendar:{option}")
     markup.row(back_button)
-
     return markup
 
 
@@ -159,11 +188,10 @@ def booking_options(call):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('option:'))
 def show_calendar(call):
-    # Показать календарь для текущего месяца
     option = call.data.split(':')[1]
     now = datetime.now()
     year, month = now.year, now.month
-    markup = generate_calendar(year, month, option)
+    markup = generate_calendar(year, month, option, call.from_user.id)
     bot.edit_message_text(
         f"Календарь: {calendar.month_name[month]} {year}",
         chat_id=call.message.chat.id,
@@ -173,7 +201,6 @@ def show_calendar(call):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('prev_month') or call.data.startswith('next_month'))
 def change_month(call):
-    # Навигация по месяцам
     action, option, date_info = call.data.split(':')
     year, month = map(int, date_info.split('-'))
 
@@ -182,13 +209,13 @@ def change_month(call):
         if month == 0:
             month = 12
             year -= 1
-    elif action == 'next_month':
+    else:  # next_month
         month += 1
         if month == 13:
             month = 1
             year += 1
 
-    markup = generate_calendar(year, month, option)
+    markup = generate_calendar(year, month, option, call.from_user.id)
     bot.edit_message_text(
         f"Календарь: {calendar.month_name[month]} {year}",
         chat_id=call.message.chat.id,
@@ -201,7 +228,7 @@ def handle_date_selection(call):
     # Обработка выбранной даты
     try:
         _, option, date = call.data.split(':')
-        markup = generate_time_slots(option, date)
+        markup = generate_time_slots(option, date, call.from_user.id)
         bot.edit_message_text(
             f"Вы выбрали {option} на {date}. Выберите время:",
             chat_id=call.message.chat.id,
@@ -255,9 +282,17 @@ def handle_confirmation(call):
         start_time = datetime(year, month, day, hour, 0).isoformat() + '+03:00'
         end_time = datetime(year, month, day, hour + 1, 0).isoformat() + '+03:00'
 
+        # Get user information
+        username = call.from_user.username or "No username"
+        user_id = call.from_user.id
+
         event = {
             'summary': f'{option} Booking',
-            'description': f'Booked via Telegram Bot\nUser ID: {call.from_user.id}',
+            'description': (
+                f'Booked via Telegram Bot\n'
+                f'User ID: {user_id}\n'
+                f'Username: @{username}'
+            ),
             'start': {
                 'dateTime': start_time,
                 'timeZone': 'Europe/Moscow',
@@ -271,7 +306,7 @@ def handle_confirmation(call):
             'status': 'confirmed',
             'extendedProperties': {
                 'private': {
-                    'userId': str(call.from_user.id)
+                    'userId': str(user_id)
                 }
             }
         }
@@ -324,7 +359,7 @@ def back_to_calendar(call):
     option = call.data.split(':')[1]
     now = datetime.now()
     year, month = now.year, now.month
-    markup = generate_calendar(year, month, option)
+    markup = generate_calendar(year, month, option, call.from_user.id)
     bot.edit_message_text(
         f"Календарь: {calendar.month_name[month]} {year}",
         chat_id=call.message.chat.id,
@@ -335,7 +370,7 @@ def back_to_calendar(call):
 @bot.callback_query_handler(func=lambda call: call.data.startswith('back_to_times:'))
 def back_to_times(call):
     _, option, date = call.data.split(':')
-    markup = generate_time_slots(option, date)
+    markup = generate_time_slots(option, date, call.from_user.id)
     bot.edit_message_text(
         f"Вы выбрали {option} на {date}. Выберите время:",
         chat_id=call.message.chat.id,
@@ -353,4 +388,24 @@ def fallback_message(message):
 
 if __name__ == '__main__':
     print("Бот запущен...")
-    bot.polling(none_stop=True)
+    while True:
+        try:
+            # Configure polling with shorter timeout and retry on failure
+            bot.polling(
+                none_stop=True,
+                interval=3,
+                timeout=20,
+                long_polling_timeout=10,
+                allowed_updates=["message", "callback_query"]
+            )
+        except requests.exceptions.ReadTimeout:
+            logger.warning("Timeout occurred, restarting polling...")
+            continue
+        except requests.exceptions.ConnectionError:
+            logger.error("Connection error occurred, waiting before retry...")
+            time.sleep(15)
+            continue
+        except Exception as e:
+            logger.error(f"Critical error occurred: {str(e)}")
+            time.sleep(30)
+            continue
