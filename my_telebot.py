@@ -30,7 +30,7 @@ class TelegramLogHandler(logging.Handler):
     def emit(self, record):
         try:
             msg = self.format(record)
-            formatted_msg = f"🔵 *{record.levelname}*\n" \
+            formatted_msg = f"🔵GoogleCalendarBot📅 *{record.levelname}*\n" \
                           f"⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n" \
                           f"📝 {msg}"
             self.bot.send_message(
@@ -162,6 +162,11 @@ def generate_confirmation(option, date, time):
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
+    # Add username logging
+    username = message.from_user.username or "No username"
+    user_id = message.from_user.id
+    logger.info(f"New user started bot: 👤 @{username} (ID: {user_id})")
+
     # Приветственное сообщение и кнопка "Забронировать"
     markup = types.InlineKeyboardMarkup()
     book_button = types.InlineKeyboardButton(text='Забронировать', callback_data='book')
@@ -176,8 +181,8 @@ def send_welcome(message):
 def booking_options(call):
     # Buttons for different options
     markup = types.InlineKeyboardMarkup()
-    first_button = types.InlineKeyboardButton(text='Бадминтон', callback_data='option:Бадминтон')
-    second_button = types.InlineKeyboardButton(text='Сквош', callback_data='option:Сквош')
+    first_button = types.InlineKeyboardButton(text='БадминтонЪ', callback_data='option:Бадминтон')
+    second_button = types.InlineKeyboardButton(text='СквошЪ', callback_data='option:Сквош')
     markup.add(first_button, second_button)
     bot.edit_message_text(
         "Выберите опцию:",
@@ -271,7 +276,11 @@ def handle_confirmation(call):
         )
 
         _, option, date, time = call.data.split(':')
-        logger.info(f"Processing booking: Sport={option}, Date={date}, Time={time}")
+
+        # Get user information
+        username = call.from_user.username or "No username"
+        user_id = call.from_user.id
+        logger.info(f"Processing booking by 👤 @{username} (ID: {user_id})\nOption: {option}\nDate: {date}\nTime: {time}")
 
         # Parse the date and add leading zeros
         year, month, day = map(int, date.split('-'))
@@ -281,10 +290,6 @@ def handle_confirmation(call):
         hour = int(time.split(':')[0])
         start_time = datetime(year, month, day, hour, 0).isoformat() + '+03:00'
         end_time = datetime(year, month, day, hour + 1, 0).isoformat() + '+03:00'
-
-        # Get user information
-        username = call.from_user.username or "No username"
-        user_id = call.from_user.id
 
         event = {
             'summary': f'{option} Booking',
@@ -312,6 +317,7 @@ def handle_confirmation(call):
         }
 
         created_event = calendar_helper.create_event(event, option)
+        logger.info(f"✅ Booking confirmed\nUser: 👤 @{username} (ID: {user_id})\nOption: {option}\nDate: {formatted_date}\nTime: {time}")
 
         # Delete the sticker message
         bot.delete_message(call.message.chat.id, sticker_message.message_id)
@@ -333,12 +339,11 @@ def handle_confirmation(call):
         )
 
     except Exception as e:
-        # Clean up sticker if there was an error
         try:
             bot.delete_message(call.message.chat.id, sticker_message.message_id)
         except:
             pass
-        logger.error(f"Booking error: {str(e)}", exc_info=True)
+        logger.error(f"❌ Booking error for 👤 @{username} (ID: {user_id}): {str(e)}", exc_info=True)
         bot.answer_callback_query(call.id, "Ошибка при бронировании")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('back_to_options'))
